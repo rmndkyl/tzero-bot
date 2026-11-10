@@ -432,7 +432,7 @@ tzero-bot/
 | Operator scripts | 24 helper scripts, all read-first (they print a plan and only act with `--execute`) |
 | Double-click launchers | `JALANKAN.bat` (menu), `CEK-POIN.bat`, `CEK-STATUS.bat`, `LIHAT-CRON.bat` |
 | Guides | `README.md` (this file) + `PANDUAN-MANUAL.md` (click-by-click, error table) |
-| License | offline licence check with an owner bypass, ready for the LYID licence server |
+| License | offline licence check (HWID-bound), ready for the LYID licence server |
 
 ## Pricing
 
