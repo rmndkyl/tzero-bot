@@ -77,14 +77,12 @@ Testnet calibration measured on 2026-11-08: a fresh curve lifts off after **~0.2
 | Site points | `scripts/site-points.js` | **Authoritative**: pulls `/api/points/<addr>` for every wallet into `data/site-points.json` (total, fuel, crew, liftoff, staking, signal, eligible, rank, per-action list). The local estimator is known to be off by 150-300 crew, so use this for eligibility decisions |
 | Sweep | `--sweep` | Consolidates dust into N wallets so a 0.01 ETH Crew buy is possible |
 | Staking | `--stake`, `--stake --buy <eth>`, `--stake --claim-rewards`, `--stake --unstake`, `--stake --stake-report` | $T0 stake/unstake/claim with an honest yield readout |
-| Fund | `--fund` | One faucet drip fanned out to the fleet |
 | Launch / claim | `--launch`, `--claim` | Create a mission, claim creator fees |
-| Helper | `scripts/balance.js` | Balance snapshot of all 21 wallets (source + fleet) |
+| Helper | `scripts/balance.js` | Balance snapshot of every wallet in `privateKey.txt` |
 | Helper | `scripts/holdings.js` | Quotes every still-held token on its correct venue -> recoverable ETH |
 | Helper | `scripts/fuel-topup.js <addr> <eth>` | Buys an exact amount on a random non-own mission and records it (used to push a wallet over 500) |
-| Helper | `scripts/send.js <from> <to> <eth>` | Plain transfer between fleet wallets |
+| Helper | `scripts/send.js <from> <to> <eth>` | Manual one-off transfer. Rescues only: every transfer between your own wallets is one more on-chain link |
 | Helper | `scripts/sepolia.js` | Relay bridge Sepolia -> Base Sepolia (`info` / `quote` / `bridge --execute`) |
-| Helper | `scripts/distribute.js <targetEth>` | Tops every fleet wallet up to a target balance from the source wallet |
 | Helper | `scripts/eligibility-catchup.js` | Buys just enough Fuel to push a 460-499 point wallet over 500 (max 1 per run) |
 | Helper | `scripts/check-position.js <SYMBOL>` | Age + sell quote + pool reserves for one held position |
 | Helper | `scripts/exit-position.js <SYMBOL> [pct]` | Sells a symbol now, bypassing the per-persona settle window (use when the pool price spikes) |
@@ -145,7 +143,7 @@ Lewat terminal:
 cd tzero-bot
 npm install
 cp config.json.example config.json
-cp privateKey.txt.example privateKey.txt   # one key per line, line 1 = funding source
+cp privateKey.txt.example privateKey.txt   # one key per line; every key farms
 node index.js --status
 node index.js --daily --dry-run --limit 1
 node index.js --daily
@@ -198,7 +196,7 @@ schtasks /create /tn "tzero-settle" /tr "node C:\Users\<user>\tzero-bot\index.js
 
 ## Wallet fleet
 
-21 wallets in `privateKey.txt` (line 1 is the funding source and does not farm).
+Every line in `privateKey.txt` is a farming wallet. **There is no funding wallet in 1.0.3**: the bot never sends ETH from one of your wallets to another, because a single wallet fanning gas out to the rest is the easiest cluster to fingerprint.
 
 | Where | What |
 |---|---|
@@ -221,12 +219,13 @@ two wallet closest to the 500 bar (0x7de5, 0xbc50) hold 0.034 each so they can t
 node scripts/sepolia.js info                                   # bridge wallet + Sepolia balance
 node scripts/sepolia.js quote 0.5 0x7490...A01                 # fee + expected output, no tx
 node scripts/sepolia.js bridge 0.5 0x7490...A01 --execute      # sign + send the deposit tx
-node scripts/distribute.js 0.02 --execute                      # top every wallet up to 0.02
+# repeat the bridge for each wallet, or use the faucet per wallet
 ```
 
 Keys: keep the bridge wallet's key out of `privateKey.txt` and out of the repo. Relay accepts any
-`recipient`, so a bridge can land straight on a fleet wallet; one bridge to the source wallet plus a
-local `distribute.js` run is cheaper than one bridge per wallet.
+`recipient`, so a bridge can land straight on the wallet you want to top up. Bridging one wallet and
+fanning it out locally is cheaper, but it creates the star graph described below - the bot no longer
+offers that shortcut.
 
 ## Anti-detection, and the sybil review
 
@@ -277,15 +276,39 @@ topology.
 
 What it cannot hide:
 
-- **A star funding graph.** Every wallet traces back to one source wallet. The sweep made the cluster
-  *more* visible, not less - it was the price of making Crew possible at all.
+- **A star funding graph, if you create one.** The bot no longer funds wallets from a single source
+  (1.0.3), but if every wallet is topped up from the same exchange account or the same faucet identity,
+  the graph is still visible on-chain. Only you can avoid that.
 - **Same RPC provider** for every wallet (one IP on the provider side).
 - **Fresh wallets created the same day**, first activity clustered.
 - **A crew train is by definition "wallets acting together".** Five buys of ~0.0105 ETH on one mission
   within minutes is the exact pattern the review describes.
 
-The only real mitigation is funding independence: each wallet claimed from a faucet on its own identity,
-spread over days, with different behaviour. Transfers inside the fleet cannot fake that.
+The only real mitigation is funding independence: each wallet claimed from a faucet (or withdrawn from
+an exchange) on its own identity, spread over days, with different behaviour. The bot can no longer
+move ETH between wallets at all, so nothing it does re-links them.
+
+### Wallet independence (1.0.3)
+
+`--fund`, the funding wallet (line 1 of `privateKey.txt`) and `scripts/distribute.js` are gone. Every key
+in `privateKey.txt` is now an equal farming wallet, and the bot never sends ETH from one of your wallets
+to another.
+
+Why: one wallet paying gas to twenty wallets is a star graph. Whoever reviews the snapshot sees a single
+address with twenty outbound transfers and can drop the whole cluster, no matter how random the amounts
+or the delays look. This is the same pattern the project's published sybil review describes.
+
+How to fund a fleet now:
+
+| Option | Notes |
+|---|---|
+| Faucet per wallet | cleanest: different days, own identity, and its own proxy line if you have one |
+| Testnet bridge straight to each wallet | `node scripts/sepolia.js bridge <eth> <wallet> --execute`; Relay accepts any recipient |
+| Exchange/faucet withdrawal per address | one withdrawal each, slightly different amounts and days |
+
+`--sweep` still exists because Crew needs one wallet holding 0.01 ETH, but it is manual, it is never part
+of `--daily`, and it does link the dust wallets to the targets on-chain. If cluster hygiene matters more
+to you than Crew, skip it and fund a single wallet properly instead.
 
 ## Configuration (`config.json`)
 
@@ -298,7 +321,6 @@ spread over days, with different behaviour. Transfers inside the fleet cannot fa
 | `daily.sellPercentMin` / `Max` | 25 / 65 | settlement sell size |
 | `daily.createMission` / `launchProbability` | true / 0.55 | own mission launch |
 | `daily.minHoursBetweenRuns` | 20 | resume guard for batches |
-| `daily.excludeSourceFromDaily` | true | wallet #1 funds, never farms |
 | `crew.scanMissions` | 2000 | missions scanned for near-liftoff (read via Multicall3, max 3000; ~13 s) |
 | `crew.minProgressBps` | 8500 | only scan missions above 85% |
 | `crew.maxFillEth` | 0.03 | max ETH a snipe may cost |
@@ -375,24 +397,24 @@ crediting itself is the project's side.
 
 ```
 tzero-bot/
-├── index.js              # CLI menu (16 actions) + flags
+├── index.js              # CLI menu (17 actions) + flags
 ├── src/
 │   ├── contracts.js      # addresses + ABIs (launchpad, router, factory, staking, fee splitter)
 │   ├── launchpad.js      # read layer (Multicall3) + fillQuote + near-liftoff scan + stake reads
-│   ├── actions.js        # buy / sell / create / claim / fund / sweep / settle / daily
+│   ├── actions.js        # buy / sell / create / claim / sweep / settle / daily
 │   ├── ledger.js         # per-buy positions, hold windows, daily Fuel cap
 │   ├── points.js         # the published point rules + local estimator
 │   ├── crew.js           # sniper + 5-wallet crew train
 │   ├── gb.js             # group-buy state machine (create -> back -> fill)
 │   ├── humanize.js       # per-wallet persona (stable per address) + log-normal tempo
 │   └── staking.js        # $T0 stake / unstake / claim / yield report
-├── scripts/              # 24 operator helpers (all read-first, --execute to act)
+├── scripts/              # 23 operator helpers (all read-first, --execute to act)
 │   ├── site-points.js    # official points for every wallet (authoritative)
 │   ├── scan-depth.js     # how deep is the near-liftoff window, which candidates are outside it
 │   ├── holdings.js       # quote every held token on its correct venue
 │   ├── check-position.js  exit-position.js   fuel-topup.js   fuel-ladder.js
 │   ├── eligibility-catchup.js               # push a 460-499 wallet over 500
-│   ├── balance.js  send.js  distribute.js   # fleet money movement
+│   ├── balance.js  send.js                  # balance snapshot + manual one-off transfer
 │   ├── sepolia.js                           # Relay bridge Sepolia -> Base Sepolia
 │   ├── gb3-bridge.js  gb3-driver.js  gb*-plan-init.js
 │   └── legacy-audit.js  vault-extract.js  state-summary.js  status.js
@@ -417,8 +439,8 @@ tzero-bot/
 | `daily Fuel cap reached` | 1 ETH of buys already spent today (UTC) | wait for the next UTC day |
 | `position(s) still inside the 65 min hold window` | settle ran too early | run `--settle` later; this is the point |
 | `no mission is within 0.05 ETH of liftoff` | nobody is close right now | crew is opportunistic; scan again in 15 min |
-| `only N/5 wallet(s) hold 0.011 ETH` | fleet is dust | `--sweep 6`, or claim another faucet drip and `--fund` |
-| `no wallet can afford the initial buy` | group buy needs 0.29 ETH | fund the fleet first |
+| `only N/5 wallet(s) hold 0.011 ETH` | that wallet is short of gas | top that wallet up from outside (faucet/bridge); 1.0.3 has no `--fund` |
+| `no wallet can afford the initial buy` | group buy needs 0.29 ETH | top up the wallets from outside first |
 | buy reverts | price moved past slippage | crew/gb use 9% slippage; daily uses 1.8-4.8% |
 | `execution reverted: "GRADUATED"` | selling a mission that already lifted off, on the curve | fixed: sells now check the venue and use TzeroSwap's router after liftoff |
 | RPC timeout | public endpoint rate limit | set your own `rpcUrl` |
@@ -429,7 +451,7 @@ tzero-bot/
 | Item | Detail |
 |---|---|
 | Full source | `index.js` + `src/` (8 modules) + `utils/` — no compiled or obfuscated files |
-| Operator scripts | 24 helper scripts, all read-first (they print a plan and only act with `--execute`) |
+| Operator scripts | 23 helper scripts, all read-first (they print a plan and only act with `--execute`) |
 | Double-click launchers | `JALANKAN.bat` (menu), `CEK-POIN.bat`, `CEK-STATUS.bat`, `LIHAT-CRON.bat` |
 | Guides | `README.md` (this file) + `PANDUAN-MANUAL.md` (click-by-click, error table) |
 | License | offline licence check (HWID-bound), ready for the LYID licence server |
