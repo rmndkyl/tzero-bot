@@ -71,6 +71,7 @@ Testnet calibration measured on 2026-11-08: a fresh curve lifts off after **~0.2
 | Fuel run | `--daily` | Buy >=0.0006 ETH on 2-4 missions and **hold**; optional mission launch; claim creator fees |
 | Settle | `--settle` | Sells only positions that already passed the 60 min hold |
 | Crew sniper | `--crew` / `--crew-scan` | Finds missions where one buy finishes the curve, buys the last slice (3M gas) -> +150 Crew. Scans up to 3,000 recent missions through Multicall3 (~13 s for 2,000), so a mission that sits at 88% for hours is still visible |
+| Crew loop | `--crew-loop` | One process instead of restarting by hand: scan -> snipe -> wait -> scan again, rotating wallets, until every wallet hits its 5/day Crew cap (or `--loop-runs N`). Wallets already at the cap are dropped from the pool, so a run never dies on a wallet that cannot earn anymore |
 | Crew train | `--crew-train` | 5 wallets each back the same near-liftoff mission (>=0.01 ETH) -> 5 x +150 if it lifts |
 | Group buy | `--gb --create` / `--back` / `--fill` / `--gb --gb-status` | 1 creator + 5 backers on our own mission -> +500 Liftoff and +150 per backer |
 | Points | `--points` | Local estimate per wallet (fuel, crew, liftoff) + live site check |
@@ -98,6 +99,7 @@ Everything is wrapped in per-wallet try/catch, a balance guard, randomized delay
 | Settle that refuses immature positions | working, live-tested |
 | Daily Fuel cap (1 ETH/day/wallet) | working |
 | Crew sniper (buy the last slice, 3M gas) | working, live-tested; now prefers wallets still under 500 points |
+| Crew loop (one process until every wallet is at 5/5) | working, dry-run tested 2026-11-13; capped wallets are skipped instead of ending the run |
 | Crew train (5 wallets on one mission) | implemented, needs 5 funded wallets |
 | Group-buy state machine with 65 min hold | implemented, needs ~0.29 ETH |
 | Points estimator + site API probe | working; the site went live 2026-11-10, so `scripts/site-points.js` is now the authoritative view |
@@ -150,7 +152,7 @@ node index.js --daily
 node index.js --points
 ```
 
-Interactive menu (`node index.js`) exposes 16 actions, including settle, crew, group buy and staking.
+Interactive menu (`node index.js`) exposes 18 actions, including settle, crew, crew loop, group buy and staking.
 
 ## Usage (cron-friendly)
 
@@ -159,6 +161,8 @@ node index.js --daily                 # fuel run, buys and holds
 node index.js --settle                # sell only positions older than 65 min
 node index.js --crew-scan             # is anything about to lift off?
 node index.js --crew --limit 1        # snipe one
+node index.js --crew-loop             # keep sniping until every wallet is 5/5 (Ctrl+C to stop)
+node index.js --crew-loop --loop-interval 900 --loop-runs 5   # bounded: 5 passes, 15 min apart
 node index.js --crew-train            # 5 wallets on one near-liftoff mission
 node index.js --gb --create           # start a cycle (needs ~0.29 ETH)
 node index.js --gb --back             # 5 backers buy in
