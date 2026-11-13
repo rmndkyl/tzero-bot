@@ -70,12 +70,12 @@ Testnet calibration measured on 2026-11-08: a fresh curve lifts off after **~0.2
 | Quote | menu 2 | buy/sell estimate, no gas |
 | Fuel run | `--daily` | Buy >=0.0006 ETH on 2-4 missions and **hold**; optional mission launch; claim creator fees |
 | Settle | `--settle` | Sells only positions that already passed the 60 min hold |
-| Crew sniper | `--crew` / `--crew-scan` | Finds missions where one buy finishes the curve, buys the last slice (3M gas) -> +150 Crew. Scans up to 3,000 recent missions through Multicall3 (~13 s for 2,000), so a mission that sits at 88% for hours is still visible |
+| Crew sniper | `--crew` / `--crew-scan` | Finds missions where one buy finishes the curve, buys the last slice (3M gas) -> +150 Crew. Scans up to 3,000 recent missions through Multicall3 (~13 s for 2,000), so a mission that sits at 88% for hours is still visible. Since 1.0.7 the wallet priority reads the **site** numbers from `data/site-points.json` (the local estimate is wrong in both directions) and skips wallets already over 500 |
 | Crew loop | `--crew-loop` | One process instead of restarting by hand: scan -> snipe -> wait -> scan again, rotating wallets, until every wallet hits its 5/day Crew cap (or `--loop-runs N`). Wallets already at the cap are dropped from the pool, so a run never dies on a wallet that cannot earn anymore |
 | Crew train | `--crew-train` | 5 wallets each back the same near-liftoff mission (>=0.01 ETH) -> 5 x +150 if it lifts |
 | Group buy | `--gb --create` / `--back` / `--fill` / `--gb --gb-status` | 1 creator + 5 backers on our own mission -> +500 Liftoff and +150 per backer |
 | Points | `--points` | Local estimate per wallet (fuel, crew, liftoff) + live site check |
-| Site points | `scripts/site-points.js` | **Authoritative**: pulls `/api/points/<addr>` for every wallet into `data/site-points.json` (total, fuel, crew, liftoff, staking, signal, eligible, rank, per-action list). The local estimator is known to be off by 150-300 crew, so use this for eligibility decisions |
+| Site points | `scripts/site-points.js` | **Authoritative**: pulls `/api/points/<addr>` for every wallet into `data/site-points.json` (total, fuel, crew, liftoff, staking, signal, eligible, rank, per-action list). 5 wallets in parallel, 4 tries each, and one refused wallet does not block the rest; the crew sniper reuses this cache for wallet priority |
 | Sweep | `--sweep` | Consolidates dust into N wallets so a 0.01 ETH Crew buy is possible |
 | Staking | `--stake`, `--stake --buy <eth>`, `--stake --claim-rewards`, `--stake --unstake`, `--stake --stake-report` | $T0 stake/unstake/claim with an honest yield readout |
 | Launch / claim | `--launch`, `--claim` | Create a mission, claim creator fees |
